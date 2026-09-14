@@ -1,0 +1,115 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 430" width="1200" height="430" role="img" aria-label="划词追问三步流程示意图">
+  <defs>
+    <style>
+      .bg{fill:#f6f7f9}
+      .win{fill:#ffffff;stroke:#e5e7eb;stroke-width:1.5}
+      .bar{fill:#f3f4f6}
+      .dot{fill:#d1d5db}
+      .line{fill:#e5e7eb}
+      .line2{fill:#eef0f3}
+      .panel{fill:#fbfbfc;stroke:#e5e7eb;stroke-width:1}
+      .card{fill:#ffffff;stroke:#e5e7eb;stroke-width:1}
+      .quote{fill:#4d6bfe}
+      .accent{fill:#4d6bfe}
+      .hl{fill:#dbe4ff}
+      .t{font-family:-apple-system,"Segoe UI","Microsoft YaHei",sans-serif;fill:#111827}
+      .s{font-family:-apple-system,"Segoe UI","Microsoft YaHei",sans-serif;fill:#6b7280}
+      .cap{font-family:-apple-system,"Segoe UI","Microsoft YaHei",sans-serif;fill:#111827;font-size:15px;font-weight:600}
+      .sub{font-family:-apple-system,"Segoe UI","Microsoft YaHei",sans-serif;fill:#6b7280;font-size:12.5px}
+      .arrow{stroke:#9ca3af;stroke-width:2;fill:none}
+      .menu{fill:#ffffff;stroke:#e5e7eb;stroke-width:1.2}
+      .badge{fill:#eef2ff}
+    </style>
+  </defs>
+
+  <rect class="bg" x="0" y="0" width="1200" height="430" rx="14"/>
+
+  <!-- ============ 窗口 1 ============ -->
+  <g>
+    <rect class="win" x="40" y="34" width="330" height="300" rx="12"/>
+    <rect class="bar" x="40" y="34" width="330" height="26" rx="12"/>
+    <rect class="bar" x="40" y="48" width="330" height="12"/>
+    <circle class="dot" cx="58" cy="47" r="3.5"/><circle class="dot" cx="70" cy="47" r="3.5"/><circle class="dot" cx="82" cy="47" r="3.5"/>
+    <rect class="panel" x="46" y="66" width="38" height="262" rx="6"/>
+    <rect class="line" x="94" y="80" width="250" height="10" rx="4"/>
+    <rect class="line2" x="94" y="98" width="210" height="10" rx="4"/>
+    <rect class="line" x="94" y="126" width="250" height="10" rx="4"/>
+    <rect class="line2" x="94" y="144" width="238" height="10" rx="4"/>
+    <!-- 选中的文字 -->
+    <rect class="hl" x="94" y="172" width="196" height="16" rx="4"/>
+    <text class="t" x="100" y="184" font-size="12">回答里的这一段被选中</text>
+    <rect class="line" x="94" y="202" width="250" height="10" rx="4"/>
+    <rect class="line2" x="94" y="220" width="176" height="10" rx="4"/>
+    <rect class="line2" x="94" y="248" width="250" height="10" rx="4"/>
+    <rect class="line2" x="94" y="266" width="128" height="10" rx="4"/>
+    <rect class="line" x="94" y="300" width="250" height="16" rx="6"/>
+  </g>
+  <text class="cap" x="40" y="364">① 选中回答里的文字</text>
+  <text class="sub" x="40" y="384">正文、代码块、表格、工具输出都支持</text>
+
+  <path class="arrow" d="M392 184 L424 184 M418 178 L424 184 L418 190"/>
+
+  <!-- ============ 窗口 2 ============ -->
+  <g>
+    <rect class="win" x="435" y="34" width="330" height="300" rx="12"/>
+    <rect class="bar" x="435" y="34" width="330" height="26" rx="12"/>
+    <rect class="bar" x="435" y="48" width="330" height="12"/>
+    <circle class="dot" cx="453" cy="47" r="3.5"/><circle class="dot" cx="465" cy="47" r="3.5"/><circle class="dot" cx="477" cy="47" r="3.5"/>
+    <rect class="panel" x="441" y="66" width="38" height="262" rx="6"/>
+    <rect class="line" x="489" y="80" width="250" height="10" rx="4"/>
+    <rect class="line2" x="489" y="98" width="210" height="10" rx="4"/>
+    <rect class="line" x="489" y="126" width="250" height="10" rx="4"/>
+    <rect class="line2" x="489" y="144" width="238" height="10" rx="4"/>
+    <rect class="hl" x="489" y="172" width="196" height="16" rx="4"/>
+    <rect class="line" x="489" y="202" width="250" height="10" rx="4"/>
+    <rect class="line2" x="489" y="220" width="176" height="10" rx="4"/>
+    <!-- 右键菜单 -->
+    <rect class="menu" x="560" y="196" width="176" height="86" rx="12"/>
+    <rect class="line2" x="570" y="204" width="120" height="9" rx="4"/>
+    <line x1="566" y1="221" x2="730" y2="221" stroke="#eef0f3" stroke-width="1"/>
+    <text class="t" x="574" y="243" font-size="12.5" fill="#4d6bfe" font-weight="600">追问（右侧面板）</text>
+    <text class="t" x="574" y="266" font-size="12.5">复制选中内容</text>
+  </g>
+  <text class="cap" x="435" y="364">② 在选区上右键</text>
+  <text class="sub" x="435" y="384">本地插件接管右键，菜单只有两项</text>
+
+  <path class="arrow" d="M787 184 L819 184 M813 178 L819 184 L813 190"/>
+
+  <!-- ============ 窗口 3 ============ -->
+  <g>
+    <rect class="win" x="830" y="34" width="330" height="300" rx="12"/>
+    <rect class="bar" x="830" y="34" width="330" height="26" rx="12"/>
+    <rect class="bar" x="830" y="48" width="330" height="12"/>
+    <circle class="dot" cx="848" cy="47" r="3.5"/><circle class="dot" cx="860" cy="47" r="3.5"/><circle class="dot" cx="872" cy="47" r="3.5"/>
+    <rect class="panel" x="836" y="66" width="38" height="262" rx="6"/>
+    <!-- 主对话：追问那一轮已隐藏（留出空档） -->
+    <rect class="line" x="884" y="80" width="120" height="10" rx="4"/>
+    <rect class="line2" x="884" y="98" width="100" height="10" rx="4"/>
+    <rect class="line" x="884" y="126" width="120" height="10" rx="4"/>
+    <rect class="line2" x="884" y="144" width="86" height="10" rx="4"/>
+    <rect x="884" y="176" width="120" height="10" rx="4" fill="#eef0f3"/>
+    <text class="s" x="884" y="206" font-size="10.5">（追问那一轮已隐藏）</text>
+    <rect class="line2" x="884" y="228" width="120" height="10" rx="4"/>
+    <rect class="line" x="884" y="256" width="86" height="10" rx="4"/>
+    <rect class="line" x="884" y="300" width="120" height="16" rx="6"/>
+    <!-- 右栏追问面板 -->
+    <rect class="panel" x="1014" y="66" width="140" height="262" rx="8"/>
+    <text class="t" x="1024" y="84" font-size="10.5" font-weight="600">追问面板</text>
+    <rect class="card" x="1022" y="92" width="124" height="150" rx="8"/>
+    <rect class="quote" x="1030" y="102" width="3" height="30" rx="2"/>
+    <rect class="line2" x="1038" y="104" width="100" height="7" rx="3"/>
+    <rect class="line2" x="1038" y="116" width="76" height="7" rx="3"/>
+    <text class="s" x="1030" y="150" font-size="9.5">我的追问 1</text>
+    <rect class="line" x="1030" y="156" width="108" height="7" rx="3"/>
+    <text class="s" x="1030" y="176" font-size="9.5">回答 1</text>
+    <rect x="1030" y="182" width="108" height="34" rx="6" fill="#f3f4f6"/>
+    <rect x="1036" y="190" width="94" height="6" rx="3" fill="#e5e7eb"/>
+    <rect x="1036" y="200" width="70" height="6" rx="3" fill="#e5e7eb"/>
+    <rect class="menu" x="1030" y="226" width="108" height="18" rx="5"/>
+    <text class="s" x="1036" y="239" font-size="9">继续追问…</text>
+    <rect class="accent" x="1030" y="252" width="52" height="18" rx="6"/>
+    <text x="1038" y="265" font-size="9.5" font-family="-apple-system,'Segoe UI','Microsoft YaHei',sans-serif" fill="#ffffff">发送</text>
+  </g>
+  <text class="cap" x="830" y="364">③ 问答留在右侧面板</text>
+  <text class="sub" x="830" y="384">主对话里这一轮被隐藏，可随时恢复</text>
+</svg>

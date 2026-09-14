@@ -24,7 +24,8 @@
   "files": [
     "README.md",
     "cordis.patch.yml",
-    "dist"
+    "dist",
+    "docs"
   ],
   "dsh": {
     "client": {

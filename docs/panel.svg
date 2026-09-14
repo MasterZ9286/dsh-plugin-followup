@@ -1,0 +1,113 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1060 620" width="1060" height="620" role="img" aria-label="追问面板结构示意图">
+  <defs>
+    <style>
+      .bg{fill:#f6f7f9}
+      .pane{fill:#ffffff;stroke:#e5e7eb;stroke-width:1.5}
+      .card{fill:#fbfbfc;stroke:#e5e7eb;stroke-width:1.2}
+      .dash{stroke:#e5e7eb;stroke-width:1;stroke-dasharray:4 4;fill:none}
+      .quote{fill:#4d6bfe}
+      .ln{fill:#e5e7eb}
+      .ln2{fill:#eef0f3}
+      .box{fill:#f3f4f6}
+      .field{fill:#ffffff;stroke:#e5e7eb;stroke-width:1}
+      .send{fill:#4d6bfe}
+      .badge{fill:#eef2ff}
+      .t{font-family:-apple-system,"Segoe UI","Microsoft YaHei",sans-serif;fill:#111827}
+      .s{font-family:-apple-system,"Segoe UI","Microsoft YaHei",sans-serif;fill:#6b7280}
+      .link{font-family:-apple-system,"Segoe UI","Microsoft YaHei",sans-serif;fill:#4d6bfe}
+      .num{font-family:-apple-system,"Segoe UI","Microsoft YaHei",sans-serif;fill:#4d6bfe;font-size:12px;font-weight:700}
+      .lead{stroke:#c7d2fe;stroke-width:1.2;fill:none}
+      .lt{font-family:-apple-system,"Segoe UI","Microsoft YaHei",sans-serif;fill:#111827;font-size:13.5px;font-weight:600}
+      .ls{font-family:-apple-system,"Segoe UI","Microsoft YaHei",sans-serif;fill:#6b7280;font-size:12px}
+    </style>
+  </defs>
+
+  <rect class="bg" x="0" y="0" width="1060" height="620" rx="14"/>
+
+  <!-- ============ 面板 ============ -->
+  <rect class="pane" x="40" y="30" width="430" height="560" rx="12"/>
+
+  <!-- 头部 -->
+  <text class="t" x="58" y="60" font-size="14" font-weight="700">追问面板</text>
+  <text class="s" x="150" y="60" font-size="12">2 条</text>
+  <text class="s" x="330" y="60" font-size="12">清空</text>
+  <line x1="40" y1="74" x2="470" y2="74" stroke="#e5e7eb" stroke-width="1"/>
+
+  <!-- 卡片 1 -->
+  <rect class="card" x="54" y="88" width="402" height="230" rx="12"/>
+  <rect class="badge" x="68" y="100" width="26" height="16" rx="8"/>
+  <text class="link" x="74" y="112" font-size="10.5" font-weight="700">#1</text>
+  <text class="s" x="104" y="112" font-size="11">引用 42 字 · 1 轮追问</text>
+  <text class="s" x="414" y="112" font-size="11">删除</text>
+  <!-- 引用 -->
+  <rect class="quote" x="68" y="126" width="3" height="26" rx="2"/>
+  <rect class="ln2" x="78" y="128" width="330" height="8" rx="4"/>
+  <rect class="ln2" x="78" y="142" width="212" height="8" rx="4"/>
+  <text class="link" x="68" y="176" font-size="11">展开全文（412 字）</text>
+  <!-- 线程 1 -->
+  <line class="dash" x1="68" y1="192" x2="442" y2="192"/>
+  <text class="s" x="68" y="212" font-size="11">我的追问 1</text>
+  <rect class="ln" x="68" y="220" width="356" height="8" rx="4"/>
+  <text class="s" x="68" y="250" font-size="11">回答 1</text>
+  <rect class="box" x="68" y="258" width="374" height="46" rx="8"/>
+  <rect x="78" y="268" width="340" height="7" rx="3" fill="#e5e7eb"/>
+  <rect x="78" y="282" width="286" height="7" rx="3" fill="#e5e7eb"/>
+  <!-- 输入与操作 -->
+  <rect class="field" x="54" y="330" width="402" height="44" rx="8"/>
+  <text class="s" x="66" y="357" font-size="11.5">继续追问…（Enter 发送）</text>
+  <rect class="send" x="54" y="382" width="76" height="24" rx="7"/>
+  <text x="70" y="398" font-size="11.5" font-family="-apple-system,'Segoe UI','Microsoft YaHei',sans-serif" fill="#ffffff">继续追问</text>
+  <text class="s" x="142" y="398" font-size="11.5">已回答</text>
+
+  <!-- 卡片 2（折叠） -->
+  <rect class="card" x="54" y="436" width="402" height="70" rx="12"/>
+  <rect class="badge" x="68" y="448" width="26" height="16" rx="8"/>
+  <text class="link" x="74" y="460" font-size="10.5" font-weight="700">#2</text>
+  <text class="s" x="104" y="460" font-size="11">引用 18 字 · 0 轮追问</text>
+  <text class="s" x="414" y="460" font-size="11">删除</text>
+  <rect class="field" x="68" y="472" width="374" height="24" rx="6"/>
+  <text class="s" x="78" y="488" font-size="11">针对这段内容追问…</text>
+
+  <!-- 底部 -->
+  <line x1="40" y1="524" x2="470" y2="524" stroke="#e5e7eb" stroke-width="1"/>
+  <text class="s" x="58" y="546" font-size="11.5">本会话独立面板 · 回答全文镜像 · 长文默认省略</text>
+  <text class="link" x="58" y="570" font-size="11.5">主对话隐藏追问：开（1 轮）</text>
+
+  <!-- ============ 标注 ============ -->
+  <path class="lead" d="M470 108 L540 108"/>
+  <circle cx="516" cy="108" r="11" fill="#ffffff" stroke="#c7d2fe" stroke-width="1.2"/>
+  <text class="num" x="512" y="112">1</text>
+
+  <path class="lead" d="M470 140 L540 168"/>
+  <circle cx="516" cy="158" r="11" fill="#ffffff" stroke="#c7d2fe" stroke-width="1.2"/>
+  <text class="num" x="512" y="162">2</text>
+
+  <path class="lead" d="M470 200 L540 228"/>
+  <circle cx="516" cy="218" r="11" fill="#ffffff" stroke="#c7d2fe" stroke-width="1.2"/>
+  <text class="num" x="512" y="222">3</text>
+
+  <path class="lead" d="M470 352 L540 300"/>
+  <circle cx="516" cy="320" r="11" fill="#ffffff" stroke="#c7d2fe" stroke-width="1.2"/>
+  <text class="num" x="512" y="324">4</text>
+
+  <path class="lead" d="M470 566 L540 400"/>
+  <circle cx="516" cy="470" r="11" fill="#ffffff" stroke="#c7d2fe" stroke-width="1.2"/>
+  <text class="num" x="512" y="474">5</text>
+
+  <text class="lt" x="562" y="112">卡片头</text>
+  <text class="ls" x="562" y="132">序号、引用字数、追问轮数；右侧「删除」只删这张卡</text>
+
+  <text class="lt" x="562" y="176">引用默认省略</text>
+  <text class="ls" x="562" y="196">超过 180 字折叠为一行摘要，点「展开全文（N 字）」看原文</text>
+
+  <text class="lt" x="562" y="242">线程：追问 + 回答</text>
+  <text class="ls" x="562" y="262">同一张卡里连续追问，回答全文镜像（超过 360 字先折叠）</text>
+
+  <text class="lt" x="562" y="320">继续追问</text>
+  <text class="ls" x="562" y="340">底部输入框常驻，Enter 发送、Shift+Enter 换行</text>
+  <text class="ls" x="562" y="358">输入框里已有草稿时只追加、不自动发送</text>
+
+  <text class="lt" x="562" y="402">隐藏开关</text>
+  <text class="ls" x="562" y="422">追问产生的那一回合在主对话中被隐藏；点这里可恢复</text>
+  <text class="ls" x="562" y="440">会话日志不变，所以上下文记忆完整保留</text>
+</svg>
