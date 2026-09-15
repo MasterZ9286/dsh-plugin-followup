@@ -11,6 +11,19 @@ window.__ModuleLoader__.load({
   id: `dsh-plugin-followup`,
   factory: (require) => {
     const React = require(`react`)
+    /**
+     * 复用产品自己的 Markdown 渲染器：主对话里的助手正文就是用它渲染的，
+     * 所以面板里的代码块 / 表格 / 列表看起来与主对话完全一致。
+     * 取不到（理论上不会）时退回纯文本，功能不受影响。
+     */
+    let MarkdownText = null
+    try {
+      const primitives = require(`@deepseek-ai/dsh-client-ui-primitives`)
+      const candidate = primitives === null || primitives === undefined ? null : primitives.MarkdownText
+      if (candidate !== null && candidate !== undefined) MarkdownText = candidate
+    } catch (error) {
+      console.warn(`[dsh-plugin-followup] MarkdownText 不可用，面板将以纯文本显示回答`, error)
+    }
     const module = { exports: {} }
     const exports = module.exports
 
@@ -51,9 +64,17 @@ window.__ModuleLoader__.load({
       `.dsh-followup-block{display:flex;flex-direction:column;gap:2px;min-width:0}`,
       `.dsh-followup-block>.dsh-followup-mini{align-self:flex-start;padding-left:0}`,
       `.dsh-followup-label{font-size:11px;color:var(--dsw-alias-label-tertiary,#999)}`,
-      `.dsh-followup-quote{border-left:2px solid var(--dsw-alias-brand-primary,#4d6bfe);padding:1px 0 1px 8px;color:var(--dsw-alias-label-secondary,#666);white-space:pre-wrap;word-break:break-word;font-size:12px;line-height:1.6}`,
-      `.dsh-followup-asked{white-space:pre-wrap;word-break:break-word;font-size:12px;color:var(--dsw-alias-label-primary,#111)}`,
-      `.dsh-followup-answer{white-space:pre-wrap;word-break:break-word;font-size:12px;line-height:1.7;padding:6px 8px;border-radius:8px;background:var(--dsw-alias-bg-layer-2,rgba(0,0,0,.04))}`,
+      `.dsh-followup-quote{border-left:2px solid var(--dsw-alias-brand-primary,#4d6bfe);padding:1px 0 1px 8px;color:var(--dsw-alias-label-secondary,#666);font-size:12px;line-height:1.6}`,
+      `.dsh-followup-asked{font-size:12px;color:var(--dsw-alias-label-primary,#111)}`,
+      `.dsh-followup-answer{font-size:12px;line-height:1.7;padding:6px 8px;border-radius:8px;background:var(--dsw-alias-bg-layer-2,rgba(0,0,0,.04))}`,
+      `.dsh-followup-md{font-size:12px;line-height:1.7;min-width:0;overflow-wrap:anywhere}`,
+      `.dsh-followup-md>*:first-child{margin-top:0}`,
+      `.dsh-followup-md>*:last-child{margin-bottom:0}`,
+      `.dsh-followup-md pre{max-width:100%;overflow-x:auto;margin:6px 0}`,
+      `.dsh-followup-md img{max-width:100%}`,
+      `.dsh-followup-plain{white-space:pre-wrap;word-break:break-word;font-size:12px;line-height:1.7}`,
+      `.dsh-followup-clamp{max-height:180px;overflow:hidden}`,
+      `.dsh-followup-clamp.dsh-followup-answer{max-height:220px}`,
       `.dsh-followup-turn{border-top:1px dashed var(--dsw-alias-border-l1,rgba(0,0,0,.1));padding-top:8px;display:flex;flex-direction:column;gap:4px}`,
       `.dsh-followup-wait{font-size:12px;color:var(--dsw-alias-label-tertiary,#999)}`,
       `.dsh-followup-q{box-sizing:border-box;width:100%;min-height:44px;max-height:160px;resize:vertical;padding:6px 8px;border-radius:8px;border:1px solid var(--dsw-alias-border-l1,rgba(0,0,0,.12));background:var(--dsw-alias-bg-base,#fff);color:inherit;font:inherit;outline:none}`,
@@ -101,6 +122,11 @@ window.__ModuleLoader__.load({
       let chainMounted = false
       let overlayOpen = false
       let clearArmed = false
+      /* 阅读位置守卫：追问期间主对话会跟随最新内容滚动，这里把阅读位置钉住。 */
+      let transcriptScroller = null
+      let readingGuard = null
+      let readingTimerOff = null
+      let readingUnpinned = false
 
       function notify(set) { set.forEach((fn) => { try { fn() } catch (error) { console.error(TAG, error) } }) }
       function subscribe(set, fn) { set.add(fn); return () => { set.delete(fn) } }
@@ -171,6 +197,33 @@ window.__ModuleLoader__.load({
         if (typeof text !== `string`) return { text: ``, clipped: false }
         if (text.length <= max) return { text, clipped: false }
         return { text: text.slice(0, max).replace(/\s+$/, ``) + `…`, clipped: true }
+      }
+
+      /* ── 阅读位置守卫：追问期间不把主对话拽离用户正在读的位置 ──────────── */
+      function stopReading() {
+        readingGuard = null
+        if (readingTimerOff !== null) {
+          try { readingTimerOff() } catch (error) { console.error(TAG, error) }
+          readingTimerOff = null
+        }
+      }
+      function readingTick() {
+        if (readingGuard === null) { stopReading(); return }
+        readingGuard.elapsed += 200
+        if (readingUnpinned === true || readingGuard.elapsed > 120000) { stopReading(); return }
+        const el = readingGuard.el
+        if (el.isConnected === false) { stopReading(); return }
+        if (Math.abs(el.scrollTop - readingGuard.top) > 2) el.scrollTop = readingGuard.top
+      }
+      /** 发送追问前调用：钉住当前阅读位置；已经贴在底部时不干预（那是跟随阅读）。 */
+      function pinReadingPosition() {
+        const el = transcriptScroller
+        if (el === null || el === undefined || el.isConnected === false) return
+        const slack = el.scrollHeight - el.scrollTop - el.clientHeight
+        if (slack < 40) { stopReading(); return }
+        readingUnpinned = false
+        readingGuard = { el, top: el.scrollTop, elapsed: 0 }
+        if (readingTimerOff === null) readingTimerOff = ctx.interval(readingTick, 200)
       }
 
       /* ── 主对话中隐藏追问回合（只影响渲染，会话日志不变） ───────────────── */
@@ -360,6 +413,31 @@ window.__ModuleLoader__.load({
         return () => { win.removeEventListener(`contextmenu`, onContextMenu, true) }
       }, `${NAME}: context menu`)
 
+      /* 用户自己滚动或按键时立刻放开守卫，绝不抢用户对滚动的控制权。 */
+      ctx.effect(() => {
+        const unpin = () => { readingUnpinned = true }
+        const onKeyDown = (event) => {
+          const keys = [`PageUp`, `PageDown`, `ArrowUp`, `ArrowDown`, `Home`, `End`, ` `]
+          if (keys.indexOf(event.key) !== -1) unpin()
+        }
+        const onPointerDown = (event) => {
+          const el = transcriptScroller
+          const target = event.target
+          if (el !== null && el !== undefined && target !== null && target !== undefined && el.contains(target) === true) unpin()
+        }
+        win.addEventListener(`wheel`, unpin, true)
+        win.addEventListener(`touchstart`, unpin, true)
+        win.addEventListener(`keydown`, onKeyDown, true)
+        doc.addEventListener(`pointerdown`, onPointerDown, true)
+        return () => {
+          win.removeEventListener(`wheel`, unpin, true)
+          win.removeEventListener(`touchstart`, unpin, true)
+          win.removeEventListener(`keydown`, onKeyDown, true)
+          doc.removeEventListener(`pointerdown`, onPointerDown, true)
+          stopReading()
+        }
+      }, `${NAME}: reading guard`)
+
       /* ── 写入主会话（已验证可行的通道） ─────────────────────────────────── */
       function findComposerInput(anchor) {
         if (anchor === null || anchor === undefined) return null
@@ -451,6 +529,7 @@ window.__ModuleLoader__.load({
             if (current.trim() === ``) {
               try { actions.setDraft(full) } catch (error) { console.error(TAG, error) }
               if (hasSubmit === true) {
+                pinReadingPosition()
                 try { actions.submit(); finishPin(claimed.pinId, `已发送，等待回答…`) } catch (error) { console.error(TAG, error); finishPin(claimed.pinId, `发送失败：` + String(error)) }
               } else {
                 finishPin(claimed.pinId, `已填入输入框（未找到发送能力）`)
@@ -511,6 +590,9 @@ window.__ModuleLoader__.load({
           const el = hostRef.current
           if (el === null) return undefined
           markers.add(el)
+          /* 这段隐藏锚点就住在对话流里，用它定位会话的滚动容器。 */
+          const scroller = scrollerFor(el)
+          if (scroller !== null) transcriptScroller = scroller
           return () => { markers.delete(el) }
         }, [])
         return React.createElement(`span`, { ref: hostRef, hidden: true, 'aria-hidden': `true` })
@@ -642,11 +724,21 @@ window.__ModuleLoader__.load({
           next[key] = next[key] !== true
           setExpanded(next)
         }
+        /**
+         * 一块内容：用产品自己的 Markdown 渲染（与主对话一致），
+         * 过长时按「高度」折叠而不是截断文本，避免把代码围栏截断成半截。
+         */
         const block = (key, text, max, cls) => {
-          const info = clip(text, max)
           const isOpen = expanded[key] === true
-          const children = [React.createElement(`div`, { className: cls, key: `body` }, isOpen ? text : info.text)]
-          if (info.clipped === true) {
+          const long = typeof text === `string` && text.length > max
+          const body = MarkdownText === null
+            ? React.createElement(`div`, { className: `dsh-followup-plain` }, text)
+            : React.createElement(`div`, { className: `dsh-followup-md` }, React.createElement(MarkdownText, { text }))
+          const children = [React.createElement(`div`, {
+            className: long === true && isOpen === false ? cls + ` dsh-followup-clamp` : cls,
+            key: `body`,
+          }, body)]
+          if (long === true) {
             children.push(React.createElement(`button`, {
               type: `button`,
               key: `more`,
