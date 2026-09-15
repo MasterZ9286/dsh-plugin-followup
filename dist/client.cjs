@@ -215,6 +215,7 @@ window.__ModuleLoader__.load({
       `.dsh-followup-clamp.dsh-followup-answer{max-height:220px}`,
       `.dsh-followup-turn{border-top:1px dashed var(--dsw-alias-border-l1,rgba(0,0,0,.1));padding-top:8px;display:flex;flex-direction:column;gap:4px}`,
       `.dsh-followup-wait{font-size:12px;color:var(--dsw-alias-label-tertiary,#999)}`,
+      `.dsh-followup-answer--pending{color:var(--dsw-alias-label-tertiary,#999)}`,
       `.dsh-followup-q{box-sizing:border-box;width:100%;min-height:44px;max-height:160px;resize:vertical;padding:6px 8px;border-radius:8px;border:1px solid var(--dsw-alias-border-l1,rgba(0,0,0,.12));background:var(--dsw-alias-bg-base,#fff);color:inherit;font:inherit;outline:none}`,
       `.dsh-followup-q:focus{border-color:var(--dsw-alias-brand-primary,#4d6bfe)}`,
       `.dsh-followup-row{display:flex;align-items:center;gap:8px}`,
@@ -448,7 +449,8 @@ window.__ModuleLoader__.load({
           const text = blocksText(closing.blocks)
           if (text.trim() !== ``) return text
         }
-        return navResponse(snapshot, index)
+        const preview = navResponse(snapshot, index)
+        return preview.trim() === `` ? `` : preview
       }
 
       /* ── 选区判定 ───────────────────────────────────────────────────────── */
@@ -709,7 +711,8 @@ window.__ModuleLoader__.load({
           hideTurn(sessionId, turnNo)
         }, [sessionId, turnNo])
         React.useEffect(() => {
-          if (answer === `` || sessionId === null) return
+          /* 只把"有实际内容"的回答镜像进卡片：空白字符串会让灰块看起来是空的。 */
+          if (answer.trim() === `` || sessionId === null) return
           const active = activeBySession[sessionId]
           if (active === undefined) return
           const pin = pins.find((entry) => entry.id === active.pinId)
@@ -862,8 +865,14 @@ window.__ModuleLoader__.load({
           next[key] = next[key] !== true
           setExpanded(next)
         }
+        /** 行内状态：只在需要提示时出现（正常的"已回答"不占位、不飘在按钮旁）。 */
+        const statusOf = (pin) => {
+          const text = typeof pin.result === `string` ? pin.result : ``
+          if (text === `已回答` || text === `等待提问` || text === `正在发送…` || text === `已发送，等待回答…`) return ``
+          return text
+        }
         /**
-         * 一块内容：用产品自己的 Markdown 渲染（与主对话一致），
+         * 一块内容：用插件自带的 Markdown 渲染，
          * 过长时按「高度」折叠而不是截断文本，避免把代码围栏截断成半截。
          */
         const block = (key, text, max, cls) => {
@@ -919,10 +928,17 @@ window.__ModuleLoader__.load({
               block(`q:` + pin.id + `:` + String(i), entry.question, CLIP_ASKED, `dsh-followup-asked`),
               React.createElement(`div`, { className: `dsh-followup-label`, key: `la` }, `回答 ` + String(i + 1)),
             ]
-            if (typeof entry.answer === `string` && entry.answer !== ``) {
+            const shown = typeof entry.answer === `string` ? entry.answer.trim() : ``
+            if (shown !== ``) {
               rows.push(block(`a:` + pin.id + `:` + String(i), entry.answer, CLIP_ANSWER, `dsh-followup-answer`))
             } else {
-              rows.push(React.createElement(`div`, { className: `dsh-followup-wait`, key: `w` }, `等回答中…`))
+              /* 没有回答时，灰块里放状态文字，绝不留下一个空白灰块。 */
+              const isLatest = i === pin.threads.length - 1
+              const note = isLatest === true ? statusOf(pin) : ``
+              rows.push(React.createElement(`div`, {
+                className: `dsh-followup-answer dsh-followup-answer--pending`,
+                key: `w`,
+              }, note !== `` ? note : `等回答中…`))
             }
             children.push(React.createElement(`div`, { className: `dsh-followup-turn`, key: `turn-` + String(i) }, rows))
           }
@@ -945,7 +961,7 @@ window.__ModuleLoader__.load({
               disabled: value.trim() === ``,
               onClick: () => send(pin),
             }, pin.threads.length === 0 ? `发送追问` : `继续追问`),
-            React.createElement(`div`, { className: `dsh-followup-result`, key: `res` }, pin.result),
+            React.createElement(`div`, { className: `dsh-followup-result`, key: `res` }, statusOf(pin)),
           ))
           return React.createElement(`div`, { className: `dsh-followup-card`, key: pin.id }, children)
         })
