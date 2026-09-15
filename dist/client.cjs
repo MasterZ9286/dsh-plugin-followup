@@ -173,6 +173,13 @@ window.__ModuleLoader__.load({
       `.dsh-followup-panel{position:fixed;top:0;right:0;bottom:0;z-index:2147483000;box-sizing:border-box;pointer-events:auto;display:flex;flex-direction:column;background:var(--dsw-alias-bg-base,#fff);border-left:1px solid var(--dsw-alias-border-l1,rgba(0,0,0,.1));box-shadow:-8px 0 24px rgba(0,0,0,.06);font-family:inherit;font-size:13px;line-height:1.5;color:var(--dsw-alias-label-primary,#111)}`,
       `.dsh-followup-panel--inline{position:relative;top:auto;right:auto;bottom:auto;left:auto;width:100%;height:100%;min-height:0;border-left:0;box-shadow:none;background:transparent}`,
       `.dsh-followup-panel-head{display:flex;align-items:center;gap:6px;padding:9px 12px;border-bottom:1px solid var(--dsw-alias-border-l1,rgba(0,0,0,.08))}`,
+      `.dsh-followup-tabs{display:flex;gap:4px;overflow-x:auto;padding:6px 8px 0;border-bottom:1px solid var(--dsw-alias-border-l1,rgba(0,0,0,.08));flex:none}`,
+      `.dsh-followup-tab{display:flex;align-items:center;gap:6px;max-width:180px;padding:5px 8px;border-radius:8px 8px 0 0;border:1px solid transparent;border-bottom:0;background:transparent;color:var(--dsw-alias-label-secondary,#888);font-size:12px;cursor:pointer;white-space:nowrap;flex:none}`,
+      `.dsh-followup-tab:hover{background:var(--dsw-alias-bg-layer-2,rgba(0,0,0,.05));color:var(--dsw-alias-label-primary,#111)}`,
+      `.dsh-followup-tab[data-active="true"]{background:var(--dsw-alias-bg-layer-2,rgba(0,0,0,.06));border-color:var(--dsw-alias-border-l1,rgba(0,0,0,.12));color:var(--dsw-alias-label-primary,#111)}`,
+      `.dsh-followup-tab-label{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:140px}`,
+      `.dsh-followup-tab-close{opacity:.6;font-size:13px;line-height:1;padding:0 2px;border-radius:4px}`,
+      `.dsh-followup-tab-close:hover{opacity:1;background:var(--dsw-alias-bg-layer-2,rgba(0,0,0,.12))}`,
       `.dsh-followup-panel-title{font-weight:600;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}`,
       `.dsh-followup-panel-count{color:var(--dsw-alias-label-secondary,#888);font-size:12px;font-weight:400}`,
       `.dsh-followup-mini{border:0;background:transparent;color:var(--dsw-alias-label-secondary,#888);font:inherit;font-size:12px;cursor:pointer;padding:2px 6px;border-radius:6px;appearance:none;white-space:nowrap}`,
@@ -267,6 +274,8 @@ window.__ModuleLoader__.load({
       let readingTimerOff = null
       let readingUnpinned = false
       let scrollHold = null
+      /* 标签页选择：每个会话各自记住当前打开的是哪一轮追问。 */
+      const selectedBySession = {}
 
       function notify(set) { set.forEach((fn) => { try { fn() } catch (error) { console.error(TAG, error) } }) }
       function subscribe(set, fn) { set.add(fn); return () => { set.delete(fn) } }
@@ -360,6 +369,7 @@ window.__ModuleLoader__.load({
         if (scrollHold !== null) return
         const ownDescriptor = Object.getOwnPropertyDescriptor(el, `scrollTop`)
         const baseDescriptor = win.Element === undefined ? undefined : Object.getOwnPropertyDescriptor(win.Element.prototype, `scrollTop`)
+        const baseScrollIntoView = win.Element === undefined ? undefined : win.Element.prototype.scrollIntoView
         const originalScrollTo = el.scrollTo
         const originalScrollBy = el.scrollBy
         const originalScroll = el.scroll
@@ -378,6 +388,14 @@ window.__ModuleLoader__.load({
           el.scrollTo = () => {}
           el.scrollBy = () => {}
           el.scroll = () => {}
+          /* 应用"滚到最新一条"也可能走 scrollIntoView：只吞掉落在被钉容器内的调用。 */
+          if (baseScrollIntoView !== undefined) {
+            win.Element.prototype.scrollIntoView = function scrollIntoView(...args) {
+              const held = scrollHold
+              if (held !== null && held.el !== null && (this === held.el || (typeof held.el.contains === `function` && held.el.contains(this) === true))) return
+              return baseScrollIntoView.apply(this, args)
+            }
+          }
         } catch (error) { console.error(TAG, error); return }
         scrollHold = {
           el,
@@ -391,6 +409,9 @@ window.__ModuleLoader__.load({
             el.scrollTo = originalScrollTo
             el.scrollBy = originalScrollBy
             el.scroll = originalScroll
+            if (baseScrollIntoView !== undefined && win.Element !== undefined) {
+              win.Element.prototype.scrollIntoView = baseScrollIntoView
+            }
           },
         }
       }
@@ -420,6 +441,35 @@ window.__ModuleLoader__.load({
         installScrollHold(el)
         readingGuard = { el, top: el.scrollTop, elapsed: 0 }
         if (readingTimerOff === null) readingTimerOff = ctx.interval(readingTick, 40)
+        /* 首次追问会打开右栏、中栏变窄，会话滚动容器可能被应用整块换掉；
+           因此过一会儿再重新定位、重新钉一次。 */
+        const repin = () => { repinReadingPosition() }
+        ctx.timeout(repin, 150)
+        ctx.timeout(repin, 450)
+        ctx.timeout(repin, 1000)
+      }
+      /** 从当前对话流里的锚点重新找出滚动容器（应用换过容器时也能跟上）。 */
+      function findTranscriptScroller() {
+        let found = null
+        markers.forEach((marker) => {
+          if (found !== null) return
+          if (marker.isConnected === false) return
+          const scroller = scrollerFor(marker)
+          if (scroller !== null) found = scroller
+        })
+        return found
+      }
+      function repinReadingPosition() {
+        if (readingGuard === null) return
+        const el = findTranscriptScroller()
+        if (el === null || el.isConnected === false) return
+        if (scrollHold !== null && scrollHold.el === el) { setScrollTop(el, readingGuard.top); return }
+        const top = readingGuard.top
+        const elapsed = readingGuard.elapsed
+        releaseScrollHold()
+        installScrollHold(el)
+        setScrollTop(el, top)
+        readingGuard = { el, top, elapsed }
       }
 
       /* ── 主对话中隐藏追问回合（只影响渲染，会话日志不变） ───────────────── */
@@ -856,6 +906,8 @@ window.__ModuleLoader__.load({
           pinSeq += 1
           const pin = { id: `pin-` + String(pinSeq), index: pinSeq, sessionId: currentSessionId, text, result: `等待提问`, threads: [] }
           setPins([pin].concat(pins))
+          /* 新追问自动成为当前页签。 */
+          if (typeof currentSessionId === `string`) selectedBySession[currentSessionId] = pin.id
           openPanelFor()
         }
         const onCopy = () => {
@@ -963,7 +1015,7 @@ window.__ModuleLoader__.load({
           setDraft(pin.id, ``)
           patchPin(pin.id, { threads: pin.threads.concat([{ question, answer: `` }]), result: `正在发送…` })
         }
-        const cards = mine.map((pin) => {
+        const renderCard = (pin) => {
           const value = typeof drafts[pin.id] === `string` ? drafts[pin.id] : ``
           const children = [
             React.createElement(`div`, { className: `dsh-followup-card-head`, key: `head` },
@@ -1024,11 +1076,42 @@ window.__ModuleLoader__.load({
             React.createElement(`div`, { className: `dsh-followup-result`, key: `res` }, statusOf(pin)),
           ))
           return React.createElement(`div`, { className: `dsh-followup-card`, key: pin.id }, children)
-        })
+        }
         const empty = React.createElement(`div`, { className: `dsh-followup-empty` },
           `还没有追问卡片。在这个会话的回答里选中文字（正文、代码块、表格都可以）→ 右键 → 「追问（右侧面板）」。`,
         )
         const hiddenCount = hiddenTurns.filter((record) => record.sessionId === sessionId).length
+        /* 每轮追问 = 一个页签（像浏览器标签）；同一轮里的继续追问留在同一页。 */
+        const selectedId = typeof sessionId === `string` ? selectedBySession[sessionId] : undefined
+        const activePin = mine.find((pin) => pin.id === selectedId) !== undefined
+          ? mine.find((pin) => pin.id === selectedId)
+          : mine[0]
+        const tabs = mine.length === 0 ? null : React.createElement(`div`, { className: `dsh-followup-tabs` },
+          mine.map((pin) => {
+            const label = typeof pin.text === `string` ? pin.text.replace(/\s+/g, ` `).slice(0, 14) : ``
+            const isActive = activePin !== undefined && activePin.id === pin.id
+            return React.createElement(`div`, {
+              className: `dsh-followup-tab`,
+              'data-active': isActive ? `true` : `false`,
+              key: `tab-` + pin.id,
+              title: pin.text,
+              onClick: () => {
+                if (typeof sessionId === `string`) { selectedBySession[sessionId] = pin.id; notify(panelSubscribers) }
+              },
+            },
+              React.createElement(`span`, { className: `dsh-followup-tab-label` }, `#` + String(pin.index) + ` · ` + label),
+              React.createElement(`span`, {
+                className: `dsh-followup-tab-close`,
+                title: `关闭这一轮追问`,
+                onClick: (event) => {
+                  event.stopPropagation()
+                  setPins(pins.filter((entry) => entry.id !== pin.id))
+                  restoreTurn(sessionId, null)
+                },
+              }, `×`),
+            )
+          }),
+        )
 
         return React.createElement(`div`, {
           className: mode === `tab` ? `dsh-followup-panel dsh-followup-panel--inline` : `dsh-followup-panel`,
@@ -1054,7 +1137,8 @@ window.__ModuleLoader__.load({
               onClick: () => { overlayOpen = false; notify(panelSubscribers) },
             }, `收起`) : null,
           ),
-          React.createElement(`div`, { className: `dsh-followup-panel-body` }, mine.length === 0 ? empty : React.createElement(PanelBoundary, null, cards)),
+          tabs,
+          React.createElement(`div`, { className: `dsh-followup-panel-body` }, mine.length === 0 ? empty : React.createElement(PanelBoundary, null, activePin === undefined ? null : renderCard(activePin))),
           React.createElement(`div`, { className: `dsh-followup-panel-foot` },
             React.createElement(`div`, null, `本会话独立面板 · 回答全文镜像 · 长文默认省略`),
             React.createElement(`button`, {
