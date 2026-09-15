@@ -17,6 +17,7 @@
   "exports": {
     ".": "./dist/index.js",
     "./client": "./dist/client.cjs",
+    "./cordis.patch.yml": "./cordis.patch.yml",
     "./package.json": "./package.json"
   },
   "main": "./dist/index.js",
