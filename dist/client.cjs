@@ -266,6 +266,7 @@ window.__ModuleLoader__.load({
       let readingGuard = null
       let readingTimerOff = null
       let readingUnpinned = false
+      let scrollHold = null
 
       function notify(set) { set.forEach((fn) => { try { fn() } catch (error) { console.error(TAG, error) } }) }
       function subscribe(set, fn) { set.add(fn); return () => { set.delete(fn) } }
@@ -338,9 +339,64 @@ window.__ModuleLoader__.load({
         return { text: text.slice(0, max).replace(/\s+$/, ``) + `…`, clipped: true }
       }
 
-      /* ── 阅读位置守卫：追问期间不把主对话拽离用户正在读的位置 ──────────── */
+      /* ── 阅读位置守卫 ─────────────────────────────────────────────────────
+       * 追问会在主对话里生成新回合，应用随即把滚动条拽到底部；而这里要做到
+       * "主对话一点变化都没有"，所以分两层：
+       *   1) 事前拦截：临时吞掉应用对该滚动容器的程序化滚动写入
+       *      （scrollTop 赋值 / scrollTo / scrollBy / scroll）；
+       *   2) 事后兜底：万一还有别的路径改了位置，以 40ms 间隔拉回原位。
+       * 用户自己滚动、按键或点击应用时立即全部放开，绝不抢控制权。
+       * ─────────────────────────────────────────────────────────────────── */
+      function setScrollTop(el, top) {
+        if (scrollHold !== null && scrollHold.el === el) { scrollHold.force(top); return }
+        el.scrollTop = top
+      }
+      function releaseScrollHold() {
+        if (scrollHold === null) return
+        try { scrollHold.restore() } catch (error) { console.error(TAG, error) }
+        scrollHold = null
+      }
+      function installScrollHold(el) {
+        if (scrollHold !== null) return
+        const ownDescriptor = Object.getOwnPropertyDescriptor(el, `scrollTop`)
+        const baseDescriptor = win.Element === undefined ? undefined : Object.getOwnPropertyDescriptor(win.Element.prototype, `scrollTop`)
+        const originalScrollTo = el.scrollTo
+        const originalScrollBy = el.scrollBy
+        const originalScroll = el.scroll
+        const force = (top) => {
+          if (baseDescriptor !== undefined && baseDescriptor.set !== undefined) baseDescriptor.set.call(el, top)
+          else el.scrollTop = top
+        }
+        try {
+          if (baseDescriptor !== undefined && baseDescriptor.get !== undefined) {
+            Object.defineProperty(el, `scrollTop`, {
+              configurable: true,
+              get() { return baseDescriptor.get.call(this) },
+              set() { /* 追问期间吞掉应用的自动滚动写入 */ },
+            })
+          }
+          el.scrollTo = () => {}
+          el.scrollBy = () => {}
+          el.scroll = () => {}
+        } catch (error) { console.error(TAG, error); return }
+        scrollHold = {
+          el,
+          force,
+          restore() {
+            if (ownDescriptor === undefined) {
+              try { delete el.scrollTop } catch (error) { console.error(TAG, error) }
+            } else {
+              try { Object.defineProperty(el, `scrollTop`, ownDescriptor) } catch (error) { console.error(TAG, error) }
+            }
+            el.scrollTo = originalScrollTo
+            el.scrollBy = originalScrollBy
+            el.scroll = originalScroll
+          },
+        }
+      }
       function stopReading() {
         readingGuard = null
+        releaseScrollHold()
         if (readingTimerOff !== null) {
           try { readingTimerOff() } catch (error) { console.error(TAG, error) }
           readingTimerOff = null
@@ -348,11 +404,11 @@ window.__ModuleLoader__.load({
       }
       function readingTick() {
         if (readingGuard === null) { stopReading(); return }
-        readingGuard.elapsed += 200
+        readingGuard.elapsed += 40
         if (readingUnpinned === true || readingGuard.elapsed > 120000) { stopReading(); return }
         const el = readingGuard.el
         if (el.isConnected === false) { stopReading(); return }
-        if (Math.abs(el.scrollTop - readingGuard.top) > 2) el.scrollTop = readingGuard.top
+        if (Math.abs(el.scrollTop - readingGuard.top) > 2) setScrollTop(el, readingGuard.top)
       }
       /** 发送追问前调用：钉住当前阅读位置；已经贴在底部时不干预（那是跟随阅读）。 */
       function pinReadingPosition() {
@@ -361,8 +417,9 @@ window.__ModuleLoader__.load({
         const slack = el.scrollHeight - el.scrollTop - el.clientHeight
         if (slack < 40) { stopReading(); return }
         readingUnpinned = false
+        installScrollHold(el)
         readingGuard = { el, top: el.scrollTop, elapsed: 0 }
-        if (readingTimerOff === null) readingTimerOff = ctx.interval(readingTick, 200)
+        if (readingTimerOff === null) readingTimerOff = ctx.interval(readingTick, 40)
       }
 
       /* ── 主对话中隐藏追问回合（只影响渲染，会话日志不变） ───────────────── */
@@ -553,17 +610,20 @@ window.__ModuleLoader__.load({
         return () => { win.removeEventListener(`contextmenu`, onContextMenu, true) }
       }, `${NAME}: context menu`)
 
-      /* 用户自己滚动或按键时立刻放开守卫，绝不抢用户对滚动的控制权。 */
+      /* 用户自己滚动、按键或点击应用时立刻全部放开，绝不抢用户对滚动的控制权。 */
       ctx.effect(() => {
-        const unpin = () => { readingUnpinned = true }
+        const ours = (target) => target !== null && target !== undefined && typeof target.closest === `function` &&
+          target.closest(`.dsh-followup-panel, .dsh-followup-menu, .dsh-followup-toggle`) !== null
+        const unpin = () => { readingUnpinned = true; releaseScrollHold() }
         const onKeyDown = (event) => {
           const keys = [`PageUp`, `PageDown`, `ArrowUp`, `ArrowDown`, `Home`, `End`, ` `]
           if (keys.indexOf(event.key) !== -1) unpin()
+          /* 在应用里打字（例如主输入框）也算接管 */
+          if (ours(event.target) === false) unpin()
         }
         const onPointerDown = (event) => {
-          const el = transcriptScroller
-          const target = event.target
-          if (el !== null && el !== undefined && target !== null && target !== undefined && el.contains(target) === true) unpin()
+          if (ours(event.target) === true) return
+          unpin()
         }
         win.addEventListener(`wheel`, unpin, true)
         win.addEventListener(`touchstart`, unpin, true)
