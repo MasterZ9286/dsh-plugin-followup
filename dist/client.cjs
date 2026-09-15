@@ -11,19 +11,6 @@ window.__ModuleLoader__.load({
   id: `dsh-plugin-followup`,
   factory: (require) => {
     const React = require(`react`)
-    /**
-     * 复用产品自己的 Markdown 渲染器：主对话里的助手正文就是用它渲染的，
-     * 所以面板里的代码块 / 表格 / 列表看起来与主对话完全一致。
-     * 取不到（理论上不会）时退回纯文本，功能不受影响。
-     */
-    let MarkdownText = null
-    try {
-      const primitives = require(`@deepseek-ai/dsh-client-ui-primitives`)
-      const candidate = primitives === null || primitives === undefined ? null : primitives.MarkdownText
-      if (candidate !== null && candidate !== undefined) MarkdownText = candidate
-    } catch (error) {
-      console.warn(`[dsh-plugin-followup] MarkdownText 不可用，面板将以纯文本显示回答`, error)
-    }
     const module = { exports: {} }
     const exports = module.exports
 
@@ -38,6 +25,143 @@ window.__ModuleLoader__.load({
       el.textContent = css
       document.head.appendChild(el)
       return () => { el.remove() }
+    }
+
+    /**
+     * 面板自带的极简 Markdown 渲染器（零外部依赖）。
+     *
+     * 不用产品内部的 MarkdownText：那个组件在真实的模块加载器里会去动态加载
+     * shiki / katex 等资源，拿不到时会在渲染期抛错，把整块面板拖黑。
+     * 这里覆盖回答里最常见的语法：代码块围栏、行内代码、标题、列表、引用、
+     * 分割线、粗体/斜体、链接、表格。
+     */
+    function renderInline(text, keyPrefix) {
+      const nodes = []
+      const pattern = /(`[^`\n]+`)|(\*\*[^*\n]+\*\*)|(\*[^*\n]+\*)|(\[[^\]\n]+\]\((https?:\/\/[^\s)]+)\))/g
+      let last = 0
+      let n = 0
+      let match = pattern.exec(text)
+      while (match !== null) {
+        if (match.index > last) nodes.push(text.slice(last, match.index))
+        if (match[1] !== undefined) nodes.push(React.createElement(`code`, { className: `dsh-followup-inline-code`, key: keyPrefix + `-c` + String(n) }, match[1].slice(1, -1)))
+        else if (match[2] !== undefined) nodes.push(React.createElement(`strong`, { key: keyPrefix + `-b` + String(n) }, match[2].slice(2, -2)))
+        else if (match[3] !== undefined) nodes.push(React.createElement(`em`, { key: keyPrefix + `-i` + String(n) }, match[3].slice(1, -1)))
+        else if (match[4] !== undefined) nodes.push(React.createElement(`a`, { className: `dsh-followup-a`, href: match[5], target: `_blank`, rel: `noreferrer`, key: keyPrefix + `-a` + String(n) }, match[4].slice(1, match[4].indexOf(`]`))))
+        n += 1
+        last = pattern.lastIndex
+        match = pattern.exec(text)
+      }
+      if (last < text.length) nodes.push(text.slice(last))
+      const out = []
+      for (const node of nodes) {
+        if (typeof node !== `string`) { out.push(node); continue }
+        const parts = node.split(`\n`)
+        for (let i = 0; i < parts.length; i += 1) {
+          if (i > 0) out.push(React.createElement(`br`, { key: keyPrefix + `-br` + String(n) + `-` + String(i) }))
+          if (parts[i] !== ``) out.push(parts[i])
+        }
+      }
+      return out
+    }
+
+    function renderMarkdown(source, keyPrefix) {
+      const lines = String(source === null || source === undefined ? `` : source).replace(/\r\n?/g, `\n`).split(`\n`)
+      const out = []
+      let i = 0
+      let k = 0
+      const nextKey = () => { k += 1; return keyPrefix + `-` + String(k) }
+      while (i < lines.length) {
+        const line = lines[i]
+        const fence = /^\s*(```|~~~)\s*([^\s`]*)\s*$/.exec(line)
+        if (fence !== null) {
+          const marker = fence[1]
+          const lang = fence[2]
+          const body = []
+          i += 1
+          while (i < lines.length && lines[i].trim().indexOf(marker) !== 0) { body.push(lines[i]); i += 1 }
+          i += 1
+          const kids = []
+          if (lang !== ``) kids.push(React.createElement(`div`, { className: `dsh-followup-code-lang`, key: `lang` }, lang))
+          kids.push(React.createElement(`pre`, { className: `dsh-followup-code-pre`, key: `pre` }, React.createElement(`code`, null, body.join(`\n`))))
+          out.push(React.createElement(`div`, { className: `dsh-followup-code`, key: nextKey() }, kids))
+          continue
+        }
+        const heading = /^(#{1,6})\s+(.*)$/.exec(line)
+        if (heading !== null) {
+          const level = heading[1].length
+          out.push(React.createElement(`div`, { className: `dsh-followup-h dsh-followup-h` + String(level), key: nextKey() }, renderInline(heading[2], nextKey())))
+          i += 1
+          continue
+        }
+        if (/^\s*([-*_])\s*\1\s*\1[\s\-*_]*$/.test(line)) {
+          out.push(React.createElement(`hr`, { className: `dsh-followup-hr`, key: nextKey() }))
+          i += 1
+          continue
+        }
+        if (/^\s*>\s?/.test(line)) {
+          const body = []
+          while (i < lines.length && /^\s*>\s?/.test(lines[i])) { body.push(lines[i].replace(/^\s*>\s?/, ``)); i += 1 }
+          out.push(React.createElement(`div`, { className: `dsh-followup-bq`, key: nextKey() }, renderMarkdown(body.join(`\n`), nextKey())))
+          continue
+        }
+        if (/^\s*([-*+]|\d+[.)])\s+/.test(line)) {
+          const ordered = /^\s*\d+[.)]\s+/.test(line)
+          const items = []
+          while (i < lines.length && /^\s*([-*+]|\d+[.)])\s+/.test(lines[i])) {
+            items.push(lines[i].replace(/^\s*([-*+]|\d+[.)])\s+/, ``))
+            i += 1
+          }
+          out.push(React.createElement(ordered ? `ol` : `ul`, { className: `dsh-followup-list`, key: nextKey() },
+            items.map((item, idx) => React.createElement(`li`, { key: `li` + String(idx) }, renderInline(item, nextKey())))))
+          continue
+        }
+        if (line.indexOf(`|`) !== -1 && i + 1 < lines.length && lines[i + 1].indexOf(`-`) !== -1 && /^\s*\|?[\s:|-]*-[\s:|-]*\|?[\s:|-]*$/.test(lines[i + 1])) {
+          const splitRow = (raw) => raw.replace(/^\s*\|/, ``).replace(/\|\s*$/, ``).split(`|`).map((cell) => cell.trim())
+          const head = splitRow(line)
+          i += 2
+          const rows = []
+          while (i < lines.length && lines[i].indexOf(`|`) !== -1 && lines[i].trim() !== ``) { rows.push(splitRow(lines[i])); i += 1 }
+          out.push(React.createElement(`table`, { className: `dsh-followup-table`, key: nextKey() },
+            React.createElement(`thead`, null, React.createElement(`tr`, null, head.map((cell, idx) => React.createElement(`th`, { key: `th` + String(idx) }, renderInline(cell, nextKey()))))),
+            React.createElement(`tbody`, null, rows.map((row, rIdx) => React.createElement(`tr`, { key: `tr` + String(rIdx) }, row.map((cell, cIdx) => React.createElement(`td`, { key: `td` + String(cIdx) }, renderInline(cell, nextKey()))))))))
+          continue
+        }
+        if (line.trim() === ``) { i += 1; continue }
+        const para = []
+        while (i < lines.length && lines[i].trim() !== `` &&
+          /^\s*([-*+]|\d+[.)])\s+/.test(lines[i]) === false &&
+          /^\s*>\s?/.test(lines[i]) === false &&
+          /^#{1,6}\s+/.test(lines[i]) === false &&
+          /^\s*(```|~~~)/.test(lines[i]) === false) {
+          para.push(lines[i])
+          i += 1
+        }
+        out.push(React.createElement(`p`, { className: `dsh-followup-p`, key: nextKey() }, renderInline(para.join(`\n`), nextKey())))
+      }
+      return out
+    }
+
+    /** 面板级错误边界：渲染异常退化成一行提示，不让整块面板变黑。 */
+    class PanelBoundary extends React.Component {
+      constructor(props) {
+        super(props)
+        this.state = { error: null }
+      }
+      static getDerivedStateFromError(error) {
+        return { error }
+      }
+      componentDidCatch(error) {
+        console.error(`[dsh-plugin-followup] 面板渲染异常（已隔离）`, error)
+      }
+      render() {
+        if (this.state.error !== null) {
+          const message = this.state.error !== null && this.state.error !== undefined && this.state.error.message !== undefined
+            ? String(this.state.error.message)
+            : String(this.state.error)
+          return React.createElement(`div`, { className: `dsh-followup-empty` }, `追问面板渲染出错，已隔离（对话不受影响）：` + message)
+        }
+        return this.props.children
+      }
     }
 
     const CSS = [
@@ -70,9 +194,23 @@ window.__ModuleLoader__.load({
       `.dsh-followup-md{font-size:12px;line-height:1.7;min-width:0;overflow-wrap:anywhere}`,
       `.dsh-followup-md>*:first-child{margin-top:0}`,
       `.dsh-followup-md>*:last-child{margin-bottom:0}`,
-      `.dsh-followup-md pre{max-width:100%;overflow-x:auto;margin:6px 0}`,
-      `.dsh-followup-md img{max-width:100%}`,
-      `.dsh-followup-plain{white-space:pre-wrap;word-break:break-word;font-size:12px;line-height:1.7}`,
+      `.dsh-followup-p{margin:0 0 6px}`,
+      `.dsh-followup-h{font-weight:600;margin:8px 0 4px}`,
+      `.dsh-followup-h1{font-size:14px}`,
+      `.dsh-followup-h2{font-size:13.5px}`,
+      `.dsh-followup-h3{font-size:13px}`,
+      `.dsh-followup-h4,.dsh-followup-h5,.dsh-followup-h6{font-size:12.5px}`,
+      `.dsh-followup-code{border:1px solid var(--dsw-alias-border-l1,rgba(0,0,0,.1));border-radius:8px;overflow:hidden;margin:6px 0;background:var(--dsw-alias-bg-layer-2,rgba(0,0,0,.04))}`,
+      `.dsh-followup-code-lang{font-size:10.5px;color:var(--dsw-alias-label-tertiary,#999);padding:3px 8px;border-bottom:1px solid var(--dsw-alias-border-l1,rgba(0,0,0,.08))}`,
+      `.dsh-followup-code-pre{margin:0;padding:7px 8px;overflow-x:auto;max-width:100%}`,
+      `.dsh-followup-code-pre code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11.5px;line-height:1.6;white-space:pre}`,
+      `.dsh-followup-inline-code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:11.5px;padding:1px 4px;border-radius:4px;background:var(--dsw-alias-bg-layer-2,rgba(0,0,0,.06))}`,
+      `.dsh-followup-list{margin:0 0 6px;padding-left:18px}`,
+      `.dsh-followup-bq{margin:4px 0;padding-left:8px;border-left:2px solid var(--dsw-alias-border-l2,rgba(0,0,0,.15));color:var(--dsw-alias-label-secondary,#666)}`,
+      `.dsh-followup-hr{border:0;border-top:1px solid var(--dsw-alias-border-l1,rgba(0,0,0,.1));margin:8px 0}`,
+      `.dsh-followup-table{width:100%;border-collapse:collapse;font-size:11.5px;margin:6px 0}`,
+      `.dsh-followup-table th,.dsh-followup-table td{border:1px solid var(--dsw-alias-border-l1,rgba(0,0,0,.1));padding:3px 6px;text-align:left}`,
+      `.dsh-followup-a{color:var(--dsw-alias-brand-primary,#4d6bfe)}`,
       `.dsh-followup-clamp{max-height:180px;overflow:hidden}`,
       `.dsh-followup-clamp.dsh-followup-answer{max-height:220px}`,
       `.dsh-followup-turn{border-top:1px dashed var(--dsw-alias-border-l1,rgba(0,0,0,.1));padding-top:8px;display:flex;flex-direction:column;gap:4px}`,
@@ -731,9 +869,7 @@ window.__ModuleLoader__.load({
         const block = (key, text, max, cls) => {
           const isOpen = expanded[key] === true
           const long = typeof text === `string` && text.length > max
-          const body = MarkdownText === null
-            ? React.createElement(`div`, { className: `dsh-followup-plain` }, text)
-            : React.createElement(`div`, { className: `dsh-followup-md` }, React.createElement(MarkdownText, { text }))
+          const body = React.createElement(`div`, { className: `dsh-followup-md` }, renderMarkdown(text, key))
           const children = [React.createElement(`div`, {
             className: long === true && isOpen === false ? cls + ` dsh-followup-clamp` : cls,
             key: `body`,
@@ -842,7 +978,7 @@ window.__ModuleLoader__.load({
               onClick: () => { overlayOpen = false; notify(panelSubscribers) },
             }, `收起`) : null,
           ),
-          React.createElement(`div`, { className: `dsh-followup-panel-body` }, mine.length === 0 ? empty : cards),
+          React.createElement(`div`, { className: `dsh-followup-panel-body` }, mine.length === 0 ? empty : React.createElement(PanelBoundary, null, cards)),
           React.createElement(`div`, { className: `dsh-followup-panel-foot` },
             React.createElement(`div`, null, `本会话独立面板 · 回答全文镜像 · 长文默认省略`),
             React.createElement(`button`, {
