@@ -273,7 +273,10 @@ window.__ModuleLoader__.load({
       let readingGuard = null
       let readingTimerOff = null
       let readingUnpinned = false
-      let scrollHold = null
+      /* 追问期间被钉住的滚动容器集合：从对话流往上，所有"真的在滚"的祖先都钉。 */
+      let scrollHolds = []
+      let scrollIntoViewBase = null
+      let scrollIntoViewPatched = false
       /* 标签页选择：每个会话各自记住当前打开的是哪一轮追问。 */
       const selectedBySession = {}
 
@@ -357,19 +360,47 @@ window.__ModuleLoader__.load({
        * 用户自己滚动、按键或点击应用时立即全部放开，绝不抢控制权。
        * ─────────────────────────────────────────────────────────────────── */
       function setScrollTop(el, top) {
-        if (scrollHold !== null && scrollHold.el === el) { scrollHold.force(top); return }
+        for (const hold of scrollHolds) {
+          if (hold.el === el) { hold.force(top); return }
+        }
         el.scrollTop = top
       }
       function releaseScrollHold() {
-        if (scrollHold === null) return
-        try { scrollHold.restore() } catch (error) { console.error(TAG, error) }
-        scrollHold = null
+        for (const hold of scrollHolds) {
+          try { hold.restore() } catch (error) { console.error(TAG, error) }
+        }
+        if (scrollHolds.length > 0) scrollHolds = []
+        unpatchScrollIntoView()
+      }
+      /* 应用"滚到最新一条"也可能走 scrollIntoView（对象是流里的某个节点），
+         因此临时替换一次 Element.prototype.scrollIntoView：落在被钉容器内的调用直接吞掉。 */
+      function patchScrollIntoView() {
+        if (scrollIntoViewPatched === true) return
+        if (win.Element === undefined) return
+        const base = win.Element.prototype.scrollIntoView
+        if (typeof base !== `function`) return
+        scrollIntoViewBase = base
+        win.Element.prototype.scrollIntoView = function scrollIntoView(...args) {
+          for (const hold of scrollHolds) {
+            const held = hold.el
+            if (held !== null && (this === held || (typeof held.contains === `function` && held.contains(this) === true))) return
+          }
+          return scrollIntoViewBase.apply(this, args)
+        }
+        scrollIntoViewPatched = true
+      }
+      function unpatchScrollIntoView() {
+        if (scrollIntoViewPatched === false) return
+        if (win.Element !== undefined && scrollIntoViewBase !== null) win.Element.prototype.scrollIntoView = scrollIntoViewBase
+        scrollIntoViewPatched = false
+        scrollIntoViewBase = null
       }
       function installScrollHold(el) {
-        if (scrollHold !== null) return
+        for (const hold of scrollHolds) {
+          if (hold.el === el) return
+        }
         const ownDescriptor = Object.getOwnPropertyDescriptor(el, `scrollTop`)
         const baseDescriptor = win.Element === undefined ? undefined : Object.getOwnPropertyDescriptor(win.Element.prototype, `scrollTop`)
-        const baseScrollIntoView = win.Element === undefined ? undefined : win.Element.prototype.scrollIntoView
         const originalScrollTo = el.scrollTo
         const originalScrollBy = el.scrollBy
         const originalScroll = el.scroll
@@ -388,16 +419,8 @@ window.__ModuleLoader__.load({
           el.scrollTo = () => {}
           el.scrollBy = () => {}
           el.scroll = () => {}
-          /* 应用"滚到最新一条"也可能走 scrollIntoView：只吞掉落在被钉容器内的调用。 */
-          if (baseScrollIntoView !== undefined) {
-            win.Element.prototype.scrollIntoView = function scrollIntoView(...args) {
-              const held = scrollHold
-              if (held !== null && held.el !== null && (this === held.el || (typeof held.el.contains === `function` && held.el.contains(this) === true))) return
-              return baseScrollIntoView.apply(this, args)
-            }
-          }
         } catch (error) { console.error(TAG, error); return }
-        scrollHold = {
+        scrollHolds.push({
           el,
           force,
           restore() {
@@ -409,11 +432,8 @@ window.__ModuleLoader__.load({
             el.scrollTo = originalScrollTo
             el.scrollBy = originalScrollBy
             el.scroll = originalScroll
-            if (baseScrollIntoView !== undefined && win.Element !== undefined) {
-              win.Element.prototype.scrollIntoView = baseScrollIntoView
-            }
           },
-        }
+        })
       }
       function stopReading() {
         readingGuard = null
@@ -426,20 +446,26 @@ window.__ModuleLoader__.load({
       function readingTick() {
         if (readingGuard === null) { stopReading(); return }
         readingGuard.elapsed += 40
+        readingGuard.checks = (readingGuard.checks + 1) % 10
         if (readingUnpinned === true || readingGuard.elapsed > 120000) { stopReading(); return }
         const el = readingGuard.el
-        if (el.isConnected === false) { stopReading(); return }
+        if (el.isConnected === false) { repinReadingPosition(); return }
         if (Math.abs(el.scrollTop - readingGuard.top) > 2) setScrollTop(el, readingGuard.top)
+        /* 约每 400ms 复核一次持有集合：应用在回答落定时可能换掉容器。 */
+        if (readingGuard.checks === 0) repinReadingPosition()
       }
       /** 发送追问前调用：钉住当前阅读位置；已经贴在底部时不干预（那是跟随阅读）。 */
       function pinReadingPosition() {
-        const el = transcriptScroller
-        if (el === null || el === undefined || el.isConnected === false) return
-        const slack = el.scrollHeight - el.scrollTop - el.clientHeight
+        const targets = collectScrollAncestors()
+        if (targets.length === 0) return
+        const primary = targets[0]
+        const slack = primary.scrollHeight - primary.scrollTop - primary.clientHeight
         if (slack < 40) { stopReading(); return }
         readingUnpinned = false
-        installScrollHold(el)
-        readingGuard = { el, top: el.scrollTop, elapsed: 0 }
+        releaseScrollHold()
+        for (const el of targets) installScrollHold(el)
+        patchScrollIntoView()
+        readingGuard = { el: primary, top: primary.scrollTop, elapsed: 0, checks: 0 }
         if (readingTimerOff === null) readingTimerOff = ctx.interval(readingTick, 40)
         /* 首次追问会打开右栏、中栏变窄，会话滚动容器可能被应用整块换掉；
            因此过一会儿再重新定位、重新钉一次。 */
@@ -448,28 +474,47 @@ window.__ModuleLoader__.load({
         ctx.timeout(repin, 450)
         ctx.timeout(repin, 1000)
       }
-      /** 从当前对话流里的锚点重新找出滚动容器（应用换过容器时也能跟上）。 */
-      function findTranscriptScroller() {
-        let found = null
+      /** 从对话流里的锚点往上，收集所有"真的在滚"的祖先（应用可能滚其中任何一个）。 */
+      function collectScrollAncestors() {
+        const out = []
         markers.forEach((marker) => {
-          if (found !== null) return
           if (marker.isConnected === false) return
-          const scroller = scrollerFor(marker)
-          if (scroller !== null) found = scroller
+          let cur = marker.parentElement
+          let depth = 0
+          while (cur !== null && cur !== undefined && cur !== doc.body && cur !== doc.documentElement && depth < 30) {
+            const owner = cur.ownerDocument === null || cur.ownerDocument === undefined ? null : cur.ownerDocument
+            const view = owner === null || owner.defaultView === undefined || owner.defaultView === null ? null : owner.defaultView
+            if (view !== null && typeof view.getComputedStyle === `function` && out.indexOf(cur) === -1) {
+              const overflowY = view.getComputedStyle(cur).overflowY
+              if ((overflowY === `auto` || overflowY === `scroll`) && cur.scrollHeight > cur.clientHeight + 8) out.push(cur)
+            }
+            cur = cur.parentElement
+            depth += 1
+          }
         })
-        return found
+        return out
+      }
+      /** 让当前持有集合与最新收集结果一致；返回收集结果。 */
+      function holdAllScrollAncestors() {
+        const targets = collectScrollAncestors()
+        if (targets.length === 0) return targets
+        const same = targets.length === scrollHolds.length &&
+          targets.every((el, index) => scrollHolds[index] !== undefined && scrollHolds[index].el === el)
+        if (same === false) {
+          releaseScrollHold()
+          for (const el of targets) installScrollHold(el)
+          patchScrollIntoView()
+        }
+        return targets
       }
       function repinReadingPosition() {
         if (readingGuard === null) return
-        const el = findTranscriptScroller()
-        if (el === null || el.isConnected === false) return
-        if (scrollHold !== null && scrollHold.el === el) { setScrollTop(el, readingGuard.top); return }
-        const top = readingGuard.top
-        const elapsed = readingGuard.elapsed
-        releaseScrollHold()
-        installScrollHold(el)
-        setScrollTop(el, top)
-        readingGuard = { el, top, elapsed }
+        const targets = holdAllScrollAncestors()
+        if (targets.length === 0) return
+        const primary = targets[0]
+        if (primary.isConnected === false) return
+        readingGuard = { el: primary, top: readingGuard.top, elapsed: readingGuard.elapsed, checks: readingGuard.checks }
+        setScrollTop(primary, readingGuard.top)
       }
 
       /* ── 主对话中隐藏追问回合（只影响渲染，会话日志不变） ───────────────── */
@@ -832,6 +877,11 @@ window.__ModuleLoader__.load({
           patchThread(active.pinId, active.index, { answer })
           patchPin(active.pinId, { result: `已回答` })
         }, [answer])
+        /* 回答内容一变（含流式与落定）就复核一次持有集合：应用可能刚刚换掉容器。 */
+        React.useEffect(() => {
+          if (readingGuard === null) return
+          repinReadingPosition()
+        }, [answer, turnCount])
       }
 
       /* ── 组件 ──────────────────────────────────────────────────────────── */
